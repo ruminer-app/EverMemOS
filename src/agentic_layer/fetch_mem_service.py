@@ -277,7 +277,7 @@ class FetchMemoryServiceImpl(FetchMemoryServiceInterface):
             )
 
     def _render_readable_profile(self, profile_data: Dict[str, Any]) -> str:
-        """Generate readable profile text from V2 profile data (no evidence/sources)."""
+        """Generate readable profile text from profile data (no evidence/sources)."""
         try:
             profile = ProfileMemoryLife.from_dict(profile_data)
             return profile.to_readable_profile()
@@ -563,7 +563,11 @@ class FetchMemoryServiceImpl(FetchMemoryServiceInterface):
                         memories = []
                 case MemoryType.FORESIGHT:
                     # Foresight: each user has only one foresight document
-                    foresight_records = await self._foresight_record_repo.get_by_user_id(user_id, limit=limit)
+                    foresight_records = (
+                        await self._foresight_record_repo.get_by_user_id(
+                            user_id, limit=limit
+                        )
+                    )
 
                     memories = [
                         self._convert_foresight_record(record)
@@ -606,29 +610,42 @@ class FetchMemoryServiceImpl(FetchMemoryServiceInterface):
 
                 case MemoryType.PROFILE:
                     # Profile: get user profiles from user_profile_repo
-                    user_profiles = await self._user_profile_repo.get_all_by_user(user_id, limit)
-                    
+                    user_profiles = await self._user_profile_repo.get_all_by_user(
+                        user_id, limit
+                    )
+
                     memories = []
                     for up in user_profiles:
                         # Avoid mutating persisted dict instances (reduce hidden side effects)
                         profile_data = dict(up.profile_data or {})
                         # Generate readable_profile if not present (for life profiles)
-                        if "readable_profile" not in profile_data and "explicit_info" in profile_data:
-                            profile_data["readable_profile"] = self._render_readable_profile(profile_data)
-                        memories.append({
-                            "id": str(up.id),
-                            "user_id": up.user_id,
-                            "group_id": up.group_id,
-                            "profile_data": profile_data,
-                            "scenario": up.scenario,
-                            "confidence": up.confidence,
-                            "version": up.version,
-                            "cluster_ids": up.cluster_ids,
-                            "memcell_count": up.memcell_count,
-                            "last_updated_cluster": up.last_updated_cluster,
-                            "created_at": up.created_at.isoformat() if up.created_at else None,
-                            "updated_at": up.updated_at.isoformat() if up.updated_at else None,
-                        })
+                        if (
+                            "readable_profile" not in profile_data
+                            and "explicit_info" in profile_data
+                        ):
+                            profile_data["readable_profile"] = (
+                                self._render_readable_profile(profile_data)
+                            )
+                        memories.append(
+                            {
+                                "id": str(up.id),
+                                "user_id": up.user_id,
+                                "group_id": up.group_id,
+                                "profile_data": profile_data,
+                                "scenario": up.scenario,
+                                "confidence": up.confidence,
+                                "version": up.version,
+                                "cluster_ids": up.cluster_ids,
+                                "memcell_count": up.memcell_count,
+                                "last_updated_cluster": up.last_updated_cluster,
+                                "created_at": (
+                                    up.created_at.isoformat() if up.created_at else None
+                                ),
+                                "updated_at": (
+                                    up.updated_at.isoformat() if up.updated_at else None
+                                ),
+                            }
+                        )
 
                 case MemoryType.PREFERENCE:
                     # Preferences: extract preference settings from core memory
