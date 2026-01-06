@@ -64,8 +64,12 @@ def convert_dict_to_fetch_mem_request(data: Dict[str, Any]) -> FetchMemRequest:
 
         # Build FetchMemRequest object
         return FetchMemRequest(
-            user_id=data.get("user_id", QUERY_ALL),
-            group_id=data.get("group_id", QUERY_ALL),
+            user_id=data.get(
+                "user_id", QUERY_ALL
+            ),  # User ID, use QUERY_ALL to skip user filtering
+            group_id=data.get(
+                "group_id", QUERY_ALL
+            ),  # Group ID, use QUERY_ALL to skip group filtering
             memory_type=memory_type,
             limit=limit,
             offset=offset,
@@ -102,7 +106,7 @@ def convert_dict_to_retrieve_mem_request(
 
         # Handle retrieve_method, use default keyword if not provided
 
-        retrieve_method_str = data.get("retrieve_method", "keyword")
+        retrieve_method_str = data.get("retrieve_method", RetrieveMethod.KEYWORD.value)
         logger.debug(f"[DEBUG] retrieve_method_str from data: {retrieve_method_str!r}")
 
         # Convert string to RetrieveMethod enum
@@ -152,12 +156,15 @@ def convert_dict_to_retrieve_mem_request(
 
         return RetrieveMemRequest(
             retrieve_method=retrieve_method,
-            user_id=data.get("user_id", None),
-            group_id=data.get("group_id", None),  # Group ID
+            user_id=data.get(
+                "user_id", QUERY_ALL
+            ),  # User ID, use QUERY_ALL to skip user filtering
+            group_id=data.get(
+                "group_id", QUERY_ALL
+            ),  # Group ID, use QUERY_ALL to skip group filtering
             query=query or data.get("query", None),
             memory_types=memory_types,
             top_k=top_k,
-            filters=data.get("filters", {}),
             include_metadata=include_metadata,
             start_time=data.get("start_time", None),
             end_time=data.get("end_time", None),

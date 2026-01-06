@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from api_specs.memory_types import BaseMemory
 from api_specs.memory_models import MemoryType, Metadata, MemoryModel, RetrieveMethod
 from common_utils.datetime_utils import get_timezone
-from core.oxm.constants import QUERY_ALL, MAX_FETCH_LIMIT
+from core.oxm.constants import QUERY_ALL, MAX_FETCH_LIMIT, MAX_RETRIEVE_LIMIT
 
 
 @dataclass
@@ -19,8 +19,8 @@ class FetchMemRequest:
     - limit is capped at MAX_FETCH_LIMIT (500)
     """
 
-    user_id: str = QUERY_ALL  # User ID, use QUERY_ALL to skip user filtering
-    group_id: str = QUERY_ALL  # Group ID, use QUERY_ALL to skip group filtering
+    user_id: Optional[str] = None
+    group_id: Optional[str] = None
     limit: Optional[int] = 40
     offset: Optional[int] = 0
     memory_type: Optional[MemoryType] = MemoryType.EPISODIC_MEMORY
@@ -61,10 +61,9 @@ class RetrieveMemRequest:
     """Memory retrieval request"""
 
     user_id: Optional[str] = None
-    group_id: Optional[str] = None  # Group ID for group memory retrieval
+    group_id: Optional[str] = None
     memory_types: List[MemoryType] = field(default_factory=list)
     top_k: int = 40
-    filters: Dict[str, Any] = field(default_factory=dict)
     include_metadata: bool = True
     start_time: Optional[str] = None
     end_time: Optional[str] = None
@@ -76,6 +75,14 @@ class RetrieveMemRequest:
     radius: Optional[float] = (
         None  # COSINE similarity threshold (use default 0.6 if None)
     )
+
+    def __post_init__(self):
+        """Validate request parameters"""
+        if self.user_id == QUERY_ALL and self.group_id == QUERY_ALL:
+            raise ValueError("user_id and group_id cannot both be QUERY_ALL")
+
+        if self.top_k and self.top_k > MAX_RETRIEVE_LIMIT:
+            self.top_k = MAX_RETRIEVE_LIMIT
 
 
 @dataclass

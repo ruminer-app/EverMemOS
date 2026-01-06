@@ -12,5 +12,9 @@ QUERY_ALL = "__all__"
 # Maximum number of records that can be fetched in a single query
 MAX_FETCH_LIMIT = 500
 
+# Magic constant: Maximum retrieve limit
+# Maximum number of records that can be retrieved in a single query
+MAX_RETRIEVE_LIMIT = 500
+
 # Export all constants
-__all__ = ["QUERY_ALL", "MAX_FETCH_LIMIT"]
+__all__ = ["QUERY_ALL", "MAX_FETCH_LIMIT", "MAX_RETRIEVE_LIMIT"]

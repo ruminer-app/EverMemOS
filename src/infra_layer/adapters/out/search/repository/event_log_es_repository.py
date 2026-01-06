@@ -10,6 +10,7 @@ import pprint
 from typing import List, Optional, Dict, Any
 from elasticsearch.dsl import Q
 from core.oxm.es.base_repository import BaseRepository
+from core.oxm.constants import QUERY_ALL
 from infra_layer.adapters.out.search.elasticsearch.memory.event_log import EventLogDoc
 from core.observation.logger import get_logger
 from common_utils.datetime_utils import get_now_with_timezone
@@ -158,16 +159,14 @@ class EventLogEsRepository(BaseRepository[EventLogDoc]):
 
             logger.debug(
                 "✅ Created event log document successfully: event_id=%s, user_id=%s",
-                event_id,
+                id,
                 user_id,
             )
             return doc
 
         except Exception as e:
             logger.error(
-                "❌ Failed to create event log document: event_id=%s, error=%s",
-                event_id,
-                e,
+                "❌ Failed to create event log document: event_id=%s, error=%s", id, e
             )
             raise
 
@@ -212,13 +211,25 @@ class EventLogEsRepository(BaseRepository[EventLogDoc]):
             # Build filter conditions
             filter_queries = []
 
-            if user_id and user_id != "":
-                filter_queries.append(Q("term", user_id=user_id))
-            elif user_id is None or user_id == "":
-                # Only keep documents where user_id does not exist (group memory)
-                filter_queries.append(Q("bool", must_not=Q("exists", field="user_id")))
-            if group_id and group_id != "":
-                filter_queries.append(Q("term", group_id=group_id))
+            # Handle user_id filter: QUERY_ALL means no filter
+            if user_id != QUERY_ALL:
+                if user_id and user_id != "":
+                    filter_queries.append(Q("term", user_id=user_id))
+                elif user_id is None or user_id == "":
+                    # Explicitly filter for null or empty: documents where user_id does not exist
+                    filter_queries.append(
+                        Q("bool", must_not=Q("exists", field="user_id"))
+                    )
+
+            # Handle group_id filter: QUERY_ALL means no filter
+            if group_id != QUERY_ALL:
+                if group_id and group_id != "":
+                    filter_queries.append(Q("term", group_id=group_id))
+                elif group_id is None or group_id == "":
+                    # Explicitly filter for null or empty: documents where group_id does not exist
+                    filter_queries.append(
+                        Q("bool", must_not=Q("exists", field="group_id"))
+                    )
 
             if keywords:
                 filter_queries.append(Q("terms", keywords=keywords))

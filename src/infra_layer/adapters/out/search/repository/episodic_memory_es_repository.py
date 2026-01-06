@@ -10,6 +10,7 @@ import pprint
 from typing import List, Optional, Dict, Any
 from elasticsearch.dsl import Q
 from core.oxm.es.base_repository import BaseRepository
+from core.oxm.constants import QUERY_ALL
 from infra_layer.adapters.out.search.elasticsearch.memory.episodic_memory import (
     EpisodicMemoryDoc,
 )
@@ -249,17 +250,28 @@ class EpisodicMemoryEsRepository(BaseRepository[EpisodicMemoryDoc]):
             # Build filter conditions
             filter_queries = []
 
-            if user_id and user_id != "":
-                filter_queries.append(Q("term", user_id=user_id))
-            elif user_id is None or user_id == "":
-                # Only keep documents where user_id does not exist (group memories)
-                filter_queries.append(Q("bool", must_not=Q("exists", field="user_id")))
-            if group_id and group_id != "":
-                filter_queries.append(Q("term", group_id=group_id))
+            # Handle user_id filter: QUERY_ALL means no filter
+            if user_id != QUERY_ALL:
+                if user_id and user_id != "":
+                    filter_queries.append(Q("term", user_id=user_id))
+                elif user_id is None or user_id == "":
+                    # Explicitly filter for null or empty: documents where user_id does not exist
+                    filter_queries.append(
+                        Q("bool", must_not=Q("exists", field="user_id"))
+                    )
+
+            # Handle group_id filter: QUERY_ALL means no filter
+            if group_id != QUERY_ALL:
+                if group_id and group_id != "":
+                    filter_queries.append(Q("term", group_id=group_id))
+                elif group_id is None or group_id == "":
+                    # Explicitly filter for null or empty: documents where group_id does not exist
+                    filter_queries.append(
+                        Q("bool", must_not=Q("exists", field="group_id"))
+                    )
+
             if participant_user_id:
                 filter_queries.append(Q("term", participants=participant_user_id))
-            if group_id:
-                filter_queries.append(Q("term", group_id=group_id))
             if event_type:
                 filter_queries.append(Q("term", type=event_type))
             if keywords:
@@ -552,14 +564,14 @@ class EpisodicMemoryEsRepository(BaseRepository[EpisodicMemoryDoc]):
         try:
             # Build filter conditions
             filter_queries = []
-            if (
-                user_id is not None
-            ):  # Use is not None instead of truthy check, supports empty string
+            # Handle user_id filter: QUERY_ALL means no filter
+            if user_id != QUERY_ALL and user_id is not None:
                 if user_id:  # Non-empty string: personal memories
                     filter_queries.append({"term": {"user_id": user_id}})
                 else:  # Empty string: group memories
                     filter_queries.append({"term": {"user_id": ""}})
-            if group_id:
+            # Handle group_id filter: QUERY_ALL means no filter
+            if group_id != QUERY_ALL and group_id:
                 filter_queries.append({"term": {"group_id": group_id}})
             if date_range:
                 filter_queries.append({"range": {"timestamp": date_range}})

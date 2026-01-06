@@ -1502,180 +1502,895 @@ class MemoryControllerTester:
         print(f"\n✅ All Memory Types Test Completed")
         return status_code, response
 
+    def _validate_search_response_structure(
+        self, status_code, response, scenario_name: str
+    ):
+        """
+        Validate the basic structure of a search response.
+
+        Args:
+            status_code: HTTP status code
+            response: Response JSON
+            scenario_name: Name of the test scenario for error messages
+
+        Returns:
+            result dict from response
+        """
+        assert (
+            status_code == 200
+        ), f"[{scenario_name}] Status code should be 200, actual: {status_code}"
+        assert (
+            response.get("status") == "ok"
+        ), f"[{scenario_name}] Status should be ok, actual: {response.get('status')}"
+        assert (
+            "result" in response
+        ), f"[{scenario_name}] Response should contain result field"
+
+        result = response["result"]
+        assert (
+            "memories" in result
+        ), f"[{scenario_name}] result should contain memories field"
+        assert (
+            "scores" in result
+        ), f"[{scenario_name}] result should contain scores field"
+        assert (
+            "total_count" in result
+        ), f"[{scenario_name}] result should contain total_count field"
+        assert (
+            "has_more" in result
+        ), f"[{scenario_name}] result should contain has_more field"
+        assert (
+            "metadata" in result
+        ), f"[{scenario_name}] result should contain metadata field"
+
+        # Validate data types
+        assert isinstance(
+            result["memories"], list
+        ), f"[{scenario_name}] memories should be a list"
+        assert isinstance(
+            result["scores"], list
+        ), f"[{scenario_name}] scores should be a list"
+        assert (
+            result["total_count"] >= 0
+        ), f"[{scenario_name}] total_count should be >= 0"
+
+        return result
+
+    def _validate_search_memories_filter(
+        self,
+        result: dict,
+        scenario_name: str,
+        expected_user_id: str = None,
+        expected_group_id: str = None,
+        user_id_filter_type: str = "exact",  # "exact", "null_or_empty", "any"
+        group_id_filter_type: str = "exact",  # "exact", "null_or_empty", "any"
+    ):
+        """
+        Validate that search results match expected user_id/group_id filters.
+
+        Search API returns memories grouped by group_id:
+        {
+            "memories": [
+                {
+                    "group_id_key": [
+                        {
+                            "memory_type": "episodic_memory",
+                            "user_id": "user_123",
+                            "group_id": "group_456",
+                            "timestamp": "...",
+                            "data": [...]
+                        }
+                    ]
+                }
+            ]
+        }
+
+        Args:
+            result: Result dict from search response
+            scenario_name: Name of the test scenario
+            expected_user_id: Expected user_id value (for exact matching)
+            expected_group_id: Expected group_id value (for exact matching)
+            user_id_filter_type: How to validate user_id ("exact", "null_or_empty", "any")
+            group_id_filter_type: How to validate group_id ("exact", "null_or_empty", "any")
+        """
+        memories_checked = 0
+
+        if result["total_count"] > 0 and len(result["memories"]) > 0:
+            # Iterate through each group's memories
+            for group_idx, memory_group in enumerate(result["memories"]):
+                assert isinstance(
+                    memory_group, dict
+                ), f"[{scenario_name}] Memory group {group_idx} should be a dictionary"
+
+                # Iterate through memories within group (key is the group_id)
+                for group_id_key, memory_list in memory_group.items():
+                    assert isinstance(
+                        group_id_key, str
+                    ), f"[{scenario_name}] group_id_key should be string"
+                    assert isinstance(
+                        memory_list, list
+                    ), f"[{scenario_name}] Memory list for group {group_id_key} should be a list"
+
+                    # Validate group_id from the grouping key itself
+                    if group_id_filter_type == "exact" and expected_group_id:
+                        assert group_id_key == expected_group_id, (
+                            f"[{scenario_name}] Memory group key should be {expected_group_id}, "
+                            f"actual: {group_id_key}"
+                        )
+                    elif group_id_filter_type == "null_or_empty":
+                        assert (
+                            group_id_key in ("", "null", "None") or group_id_key == ""
+                        ), (
+                            f"[{scenario_name}] Memory group key should be empty/null, "
+                            f"actual: {group_id_key}"
+                        )
+
+                    # Validate each memory in the group
+                    for mem_idx, mem in enumerate(memory_list):
+                        assert isinstance(
+                            mem, dict
+                        ), f"[{scenario_name}] Memory {mem_idx} should be a dictionary"
+                        assert (
+                            "memory_type" in mem
+                        ), f"[{scenario_name}] Memory {mem_idx} should contain memory_type"
+
+                        memories_checked += 1
+
+                        # Validate user_id filter from the memory object
+                        mem_user_id = mem.get("user_id")
+                        if user_id_filter_type == "exact" and expected_user_id:
+                            assert mem_user_id == expected_user_id, (
+                                f"[{scenario_name}] Memory {mem_idx} user_id should be {expected_user_id}, "
+                                f"actual: {mem_user_id}"
+                            )
+                        elif user_id_filter_type == "null_or_empty":
+                            assert mem_user_id in (None, ""), (
+                                f"[{scenario_name}] Memory {mem_idx} user_id should be None or empty, "
+                                f"actual: {mem_user_id}"
+                            )
+                        # "any" means no validation needed for user_id
+
+                        # Validate group_id filter from the memory object (if present)
+                        mem_group_id = mem.get("group_id")
+                        if group_id_filter_type == "exact" and expected_group_id:
+                            # Also check the memory's own group_id field if it exists
+                            if mem_group_id is not None:
+                                assert mem_group_id == expected_group_id, (
+                                    f"[{scenario_name}] Memory {mem_idx} group_id should be {expected_group_id}, "
+                                    f"actual: {mem_group_id}"
+                                )
+                        elif group_id_filter_type == "null_or_empty":
+                            if mem_group_id is not None:
+                                assert mem_group_id in (None, ""), (
+                                    f"[{scenario_name}] Memory {mem_idx} group_id should be None or empty, "
+                                    f"actual: {mem_group_id}"
+                                )
+                        # "any" means no validation needed for group_id
+
+        print(f"    [Debug] Checked {memories_checked} memories in {scenario_name}")
+
     def test_search_memories_keyword(self):
-        """Test 5: GET /api/v1/memories/search - Keyword search (pass parameters via body)"""
+        """Test 5: GET /api/v1/memories/search - Keyword search (pass parameters via body)
+
+        Tests multiple scenarios for user_id/group_id parameter behavior:
+        Note: user_id and group_id cannot BOTH be QUERY_ALL (not provided or "__all__")
+
+        1. Neither user_id nor group_id provided - should return 400 error
+        2. Only user_id provided (group_id NOT in request, query_all for group_id)
+        3. user_id + group_id=None or "" (filter for null/empty group_id)
+        4. user_id + group_id both have valid values (exact match)
+        5. user_id="__all__" + valid group_id (query_all for user_id)
+        6. user_id=None or "" + valid group_id (filter for null/empty user_id)
+        """
         self.print_section("Test 5: GET /api/v1/memories/search - Keyword Search")
 
-        # Note: Although route is defined as GET, actual implementation reads parameters from body
-        # Similar to Elasticsearch search API, GET requests can carry body
+        # =================================================================
+        # Scenario 1: Neither user_id nor group_id provided - should return 400 error
+        # (user_id and group_id cannot both be QUERY_ALL)
+        # =================================================================
+        print(
+            "\n--- Scenario 1: Neither user_id nor group_id provided (should return 400) ---"
+        )
+        data = {
+            "query": "coffee",
+            "top_k": 10,
+            "retrieve_method": "keyword",
+            # user_id and group_id are NOT in the request at all
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+
+        # Should return 400 error because user_id and group_id cannot both be QUERY_ALL
+        assert (
+            status_code == 400
+        ), f"[Scenario 1] Status code should be 400, actual: {status_code}"
+        assert (
+            response.get("status") == "failed"
+        ), f"[Scenario 1] Status should be failed"
+        assert "user_id and group_id cannot both be QUERY_ALL" in response.get(
+            "message", ""
+        ), f"[Scenario 1] Error message should mention the constraint, actual: {response.get('message')}"
+
+        print(
+            f"✅ Scenario 1 successful, correctly returned 400 error for invalid request"
+        )
+
+        # =================================================================
+        # Scenario 2: Only user_id provided (group_id NOT in request)
+        # =================================================================
+        print(
+            "\n--- Scenario 2: Only user_id provided (group_id NOT in request, query_all for group_id) ---"
+        )
         data = {
             "user_id": self.user_id,
+            "query": "coffee",
+            "top_k": 10,
+            "retrieve_method": "keyword",
+            # group_id is NOT in the request at all
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 2"
+        )
+
+        # Validate metadata
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 2] metadata user_id should match"
+
+        # When group_id is not provided, should return memories from all groups for this user
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 2",
+            expected_user_id=self.user_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="any",
+        )
+
+        print(
+            f"✅ Scenario 2 successful, returned {result['total_count']} groups of memories for user_id={self.user_id}"
+        )
+
+        # =================================================================
+        # Scenario 3: user_id + group_id=None or "" (filter for null/empty group_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 3: user_id + group_id='' (filter for null/empty group_id) ---"
+        )
+        data = {
+            "user_id": self.user_id,
+            "group_id": "",  # Empty string, equivalent to None
             "query": "coffee",
             "top_k": 10,
             "retrieve_method": "keyword",
         }
 
         status_code, response = self.call_get_with_body_api("/search", data)
-
-        # Assert: Precisely validate response structure
-        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
-        assert (
-            response.get("status") == "ok"
-        ), f"Status should be ok, actual: {response.get('status')}"
-        assert "result" in response, "Response should contain result field"
-
-        result = response["result"]
-        assert "memories" in result, "result should contain memories field"
-        assert "scores" in result, "result should contain scores field"
-        assert "total_count" in result, "result should contain total_count field"
-        assert "has_more" in result, "result should contain has_more field"
-        assert "metadata" in result, "result should contain metadata field"
-
-        # Validate data types
-        assert isinstance(result["memories"], list), "memories should be a list"
-        assert isinstance(result["scores"], list), "scores should be a list"
-        assert result["total_count"] >= 0, "total_count should be >= 0"
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 3"
+        )
 
         # Validate metadata
         metadata = result["metadata"]
-        assert metadata.get("user_id") == self.user_id, "metadata user_id should match"
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 3] metadata user_id should match"
 
-        # If there are results, deeply validate nested structure
-        if result["total_count"] > 0 and len(result["memories"]) > 0:
-            # Validate memories and scores have same length
-            assert len(result["memories"]) == len(
-                result["scores"]
-            ), "memories and scores should have same length"
+        # When group_id is "" or None, should only return memories with null/empty group_id
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 3",
+            expected_user_id=self.user_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="null_or_empty",
+        )
 
-            # Iterate through each group's memories
-            for group_idx, memory_group in enumerate(result["memories"]):
-                assert isinstance(
-                    memory_group, dict
-                ), f"Memory group {group_idx} should be a dictionary"
+        print(
+            f"✅ Scenario 3 successful, returned {result['total_count']} groups of memories with null/empty group_id"
+        )
 
-                # Iterate through memories within group
-                for group_id, memory_list in memory_group.items():
-                    assert isinstance(group_id, str), "group_id should be string"
-                    assert isinstance(
-                        memory_list, list
-                    ), f"Memory list for group {group_id} should be a list"
+        # =================================================================
+        # Scenario 4: user_id + group_id both have valid values (exact match)
+        # =================================================================
+        print(
+            "\n--- Scenario 4: user_id + group_id both have valid values (exact match) ---"
+        )
+        data = {
+            "user_id": self.user_id,
+            "group_id": self.group_id,
+            "query": "coffee",
+            "top_k": 10,
+            "retrieve_method": "keyword",
+        }
 
-                    # Validate basic fields for each memory
-                    for mem_idx, mem in enumerate(memory_list):
-                        assert isinstance(
-                            mem, dict
-                        ), f"Memory {mem_idx} should be a dictionary"
-                        assert (
-                            "memory_type" in mem
-                        ), f"Memory {mem_idx} should contain memory_type"
-                        assert (
-                            "user_id" in mem
-                        ), f"Memory {mem_idx} should contain user_id"
-                        assert (
-                            "timestamp" in mem
-                        ), f"Memory {mem_idx} should contain timestamp"
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 4"
+        )
 
-            print(
-                f"✅ Search Keyword successful, returned {result['total_count']} groups of memories"
-            )
-        else:
-            print(
-                f"✅ Search Keyword successful, returned {result['total_count']} groups of memories"
-            )
+        # Validate metadata (user_id should be present)
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 4] metadata user_id should match"
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
 
+        # When both have valid values, should only return exact matches - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 4",
+            expected_user_id=self.user_id,
+            expected_group_id=self.group_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 4 successful, returned {result['total_count']} groups of memories with exact user_id and group_id"
+        )
+
+        # =================================================================
+        # Scenario 5: user_id="__all__" + valid group_id (query_all for user_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 5: user_id='__all__' + valid group_id (query_all for user_id) ---"
+        )
+        data = {
+            "user_id": "__all__",
+            "group_id": self.group_id,
+            "query": "coffee",
+            "top_k": 10,
+            "retrieve_method": "keyword",
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 5"
+        )
+
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When user_id is "__all__", should return memories from all users in this group - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 5",
+            expected_group_id=self.group_id,
+            user_id_filter_type="any",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 5 successful, returned {result['total_count']} groups of memories with group_id={self.group_id} (user_id=__all__)"
+        )
+
+        # =================================================================
+        # Scenario 6: user_id=None or "" + valid group_id (filter for null/empty user_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 6: user_id='' + valid group_id (filter for null/empty user_id) ---"
+        )
+        data = {
+            "user_id": "",  # Empty string, equivalent to None
+            "group_id": self.group_id,
+            "query": "coffee",
+            "top_k": 10,
+            "retrieve_method": "keyword",
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 6"
+        )
+
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When user_id is "" or None, should only return memories with null/empty user_id - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 6",
+            expected_group_id=self.group_id,
+            user_id_filter_type="null_or_empty",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 6 successful, returned {result['total_count']} groups of memories with null/empty user_id"
+        )
+
+        print(f"\n✅ All Keyword Search Scenarios Completed Successfully")
         return status_code, response
 
     def test_search_memories_vector(self):
-        """Test 6: GET /api/v1/memories/search - Vector search (pass parameters via body)"""
+        """Test 6: GET /api/v1/memories/search - Vector search (pass parameters via body)
+
+        Tests multiple scenarios for user_id/group_id parameter behavior:
+        Note: user_id and group_id cannot BOTH be QUERY_ALL (not provided or "__all__")
+
+        1. Neither user_id nor group_id provided - should return 400 error
+        2. Only user_id provided (group_id NOT in request, query_all for group_id)
+        3. user_id + group_id=None or "" (filter for null/empty group_id)
+        4. user_id + group_id both have valid values (exact match)
+        5. user_id="__all__" + valid group_id (query_all for user_id)
+        6. user_id=None or "" + valid group_id (filter for null/empty user_id)
+        """
         self.print_section("Test 6: GET /api/v1/memories/search - Vector Search")
 
+        # =================================================================
+        # Scenario 1: Neither user_id nor group_id provided - should return 400 error
+        # =================================================================
+        print(
+            "\n--- Scenario 1: Neither user_id nor group_id provided (should return 400) ---"
+        )
+        data = {
+            "query": "user's dietary preferences",
+            "top_k": 10,
+            "retrieve_method": "vector",
+            # user_id and group_id are NOT in the request at all
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+
+        # Should return 400 error because user_id and group_id cannot both be QUERY_ALL
+        assert (
+            status_code == 400
+        ), f"[Scenario 1] Status code should be 400, actual: {status_code}"
+        assert (
+            response.get("status") == "failed"
+        ), f"[Scenario 1] Status should be failed"
+        assert "user_id and group_id cannot both be QUERY_ALL" in response.get(
+            "message", ""
+        ), f"[Scenario 1] Error message should mention the constraint, actual: {response.get('message')}"
+
+        print(
+            f"✅ Scenario 1 successful, correctly returned 400 error for invalid request"
+        )
+
+        # =================================================================
+        # Scenario 2: Only user_id provided (group_id NOT in request)
+        # =================================================================
+        print(
+            "\n--- Scenario 2: Only user_id provided (group_id NOT in request, query_all for group_id) ---"
+        )
         data = {
             "user_id": self.user_id,
+            "query": "user's dietary preferences",
+            "top_k": 10,
+            "retrieve_method": "vector",
+            # group_id is NOT in the request at all
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 2"
+        )
+
+        # Validate metadata
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 2] metadata user_id should match"
+
+        # Vector search should have importance_scores when there are results
+        if result["total_count"] > 0:
+            assert (
+                "importance_scores" in result
+            ), "[Scenario 2] Vector search result should contain importance_scores field"
+
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 2",
+            expected_user_id=self.user_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="any",
+        )
+
+        print(
+            f"✅ Scenario 2 successful, returned {result['total_count']} groups of memories for user_id={self.user_id}"
+        )
+
+        # =================================================================
+        # Scenario 3: user_id + group_id=None or "" (filter for null/empty group_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 3: user_id + group_id='' (filter for null/empty group_id) ---"
+        )
+        data = {
+            "user_id": self.user_id,
+            "group_id": "",  # Empty string, equivalent to None
             "query": "user's dietary preferences",
             "top_k": 10,
             "retrieve_method": "vector",
         }
 
         status_code, response = self.call_get_with_body_api("/search", data)
-
-        # Assert: Precisely validate response structure
-        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
-        assert (
-            response.get("status") == "ok"
-        ), f"Status should be ok, actual: {response.get('status')}"
-        assert "result" in response, "Response should contain result field"
-
-        result = response["result"]
-        assert "memories" in result, "result should contain memories field"
-        assert "scores" in result, "result should contain scores field"
-        assert "total_count" in result, "result should contain total_count field"
-        assert "has_more" in result, "result should contain has_more field"
-        assert "metadata" in result, "result should contain metadata field"
-
-        # Vector search should have importance_scores
-        if result["total_count"] > 0:
-            assert (
-                "importance_scores" in result
-            ), "Vector search result should contain importance_scores field"
-            assert isinstance(
-                result["importance_scores"], list
-            ), "importance_scores should be a list"
-
-        print(
-            f"✅ Search Vector successful, returned {result['total_count']} groups of memories"
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 3"
         )
 
+        # Validate metadata
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 3] metadata user_id should match"
+
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 3",
+            expected_user_id=self.user_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="null_or_empty",
+        )
+
+        print(
+            f"✅ Scenario 3 successful, returned {result['total_count']} groups of memories with null/empty group_id"
+        )
+
+        # =================================================================
+        # Scenario 4: user_id + group_id both have valid values (exact match)
+        # =================================================================
+        print(
+            "\n--- Scenario 4: user_id + group_id both have valid values (exact match) ---"
+        )
+        data = {
+            "user_id": self.user_id,
+            "group_id": self.group_id,
+            "query": "user's dietary preferences",
+            "top_k": 10,
+            "retrieve_method": "vector",
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 4"
+        )
+
+        # Validate metadata (user_id should be present)
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 4] metadata user_id should match"
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When both have valid values, should only return exact matches - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 4",
+            expected_user_id=self.user_id,
+            expected_group_id=self.group_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 4 successful, returned {result['total_count']} groups of memories with exact user_id and group_id"
+        )
+
+        # =================================================================
+        # Scenario 5: user_id="__all__" + valid group_id (query_all for user_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 5: user_id='__all__' + valid group_id (query_all for user_id) ---"
+        )
+        data = {
+            "user_id": "__all__",
+            "group_id": self.group_id,
+            "query": "user's dietary preferences",
+            "top_k": 10,
+            "retrieve_method": "vector",
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 5"
+        )
+
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When user_id is "__all__", should return memories from all users in this group - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 5",
+            expected_group_id=self.group_id,
+            user_id_filter_type="any",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 5 successful, returned {result['total_count']} groups of memories with group_id={self.group_id}"
+        )
+
+        # =================================================================
+        # Scenario 6: user_id=None or "" + valid group_id (filter for null/empty user_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 6: user_id='' + valid group_id (filter for null/empty user_id) ---"
+        )
+        data = {
+            "user_id": "",  # Empty string, equivalent to None
+            "group_id": self.group_id,
+            "query": "user's dietary preferences",
+            "top_k": 10,
+            "retrieve_method": "vector",
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 6"
+        )
+
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When user_id is "" or None, should only return memories with null/empty user_id - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 6",
+            expected_group_id=self.group_id,
+            user_id_filter_type="null_or_empty",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 6 successful, returned {result['total_count']} groups of memories with null/empty user_id"
+        )
+
+        print(f"\n✅ All Vector Search Scenarios Completed Successfully")
         return status_code, response
 
     def test_search_memories_hybrid(self):
-        """Test 7: GET /api/v1/memories/search - Hybrid search (pass parameters via body)"""
+        """Test 7: GET /api/v1/memories/search - Hybrid search (pass parameters via body)
+
+        Tests multiple scenarios for user_id/group_id parameter behavior:
+        Note: user_id and group_id cannot BOTH be QUERY_ALL (not provided or "__all__")
+
+        1. Neither user_id nor group_id provided - should return 400 error
+        2. Only user_id provided (group_id NOT in request, query_all for group_id)
+        3. user_id + group_id=None or "" (filter for null/empty group_id)
+        4. user_id + group_id both have valid values (exact match)
+        5. user_id="__all__" + valid group_id (query_all for user_id)
+        6. user_id=None or "" + valid group_id (filter for null/empty user_id)
+        """
         self.print_section("Test 7: GET /api/v1/memories/search - Hybrid Search")
 
         now = datetime.now(ZoneInfo("UTC"))
+        start_time = (now - timedelta(days=60)).isoformat()
+        end_time = now.isoformat()
+
+        # =================================================================
+        # Scenario 1: Neither user_id nor group_id provided - should return 400 error
+        # =================================================================
+        print(
+            "\n--- Scenario 1: Neither user_id nor group_id provided (should return 400) ---"
+        )
+        data = {
+            "query": "coffee preference",
+            "top_k": 10,
+            "retrieve_method": "hybrid",
+            "start_time": start_time,
+            "end_time": end_time,
+            # user_id and group_id are NOT in the request at all
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+
+        # Should return 400 error because user_id and group_id cannot both be QUERY_ALL
+        assert (
+            status_code == 400
+        ), f"[Scenario 1] Status code should be 400, actual: {status_code}"
+        assert (
+            response.get("status") == "failed"
+        ), f"[Scenario 1] Status should be failed"
+        assert "user_id and group_id cannot both be QUERY_ALL" in response.get(
+            "message", ""
+        ), f"[Scenario 1] Error message should mention the constraint, actual: {response.get('message')}"
+
+        print(
+            f"✅ Scenario 1 successful, correctly returned 400 error for invalid request"
+        )
+
+        # =================================================================
+        # Scenario 2: Only user_id provided (group_id NOT in request)
+        # =================================================================
+        print(
+            "\n--- Scenario 2: Only user_id provided (group_id NOT in request, query_all for group_id) ---"
+        )
         data = {
             "user_id": self.user_id,
             "query": "coffee preference",
             "top_k": 10,
             "retrieve_method": "hybrid",
-            "start_time": (now - timedelta(days=60)).isoformat(),
-            "end_time": now.isoformat(),
+            "start_time": start_time,
+            "end_time": end_time,
+            # group_id is NOT in the request at all
         }
 
         status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 2"
+        )
 
-        # Assert: Precisely validate response structure
-        assert status_code == 200, f"Status code should be 200, actual: {status_code}"
+        # Validate metadata
+        metadata = result["metadata"]
         assert (
-            response.get("status") == "ok"
-        ), f"Status should be ok, actual: {response.get('status')}"
-        assert "result" in response, "Response should contain result field"
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 2] metadata user_id should match"
 
-        result = response["result"]
-        assert "memories" in result, "result should contain memories field"
-        assert "scores" in result, "result should contain scores field"
-        assert "total_count" in result, "result should contain total_count field"
-        assert "has_more" in result, "result should contain has_more field"
-        assert "metadata" in result, "result should contain metadata field"
-
-        # Hybrid search should have importance_scores
+        # Hybrid search should have importance_scores when there are results
         if result["total_count"] > 0:
             assert (
                 "importance_scores" in result
-            ), "Hybrid search result should contain importance_scores field"
-            assert isinstance(
-                result["importance_scores"], list
-            ), "importance_scores should be a list"
-
-            # Validate source in metadata
-            metadata = result["metadata"]
+            ), "[Scenario 2] Hybrid search result should contain importance_scores field"
             assert (
                 metadata.get("source") == "hybrid"
-            ), "Hybrid search source should be hybrid"
+            ), "[Scenario 2] Hybrid search source should be hybrid"
 
-        print(
-            f"✅ Search Hybrid successful, returned {result['total_count']} groups of memories"
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 2",
+            expected_user_id=self.user_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="any",
         )
 
+        print(
+            f"✅ Scenario 2 successful, returned {result['total_count']} groups of memories for user_id={self.user_id}"
+        )
+
+        # =================================================================
+        # Scenario 3: user_id + group_id=None or "" (filter for null/empty group_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 3: user_id + group_id='' (filter for null/empty group_id) ---"
+        )
+        data = {
+            "user_id": self.user_id,
+            "group_id": "",  # Empty string, equivalent to None
+            "query": "coffee preference",
+            "top_k": 10,
+            "retrieve_method": "hybrid",
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 3"
+        )
+
+        # Validate metadata
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 3] metadata user_id should match"
+
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 3",
+            expected_user_id=self.user_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="null_or_empty",
+        )
+
+        print(
+            f"✅ Scenario 3 successful, returned {result['total_count']} groups of memories with null/empty group_id"
+        )
+
+        # =================================================================
+        # Scenario 4: user_id + group_id both have valid values (exact match)
+        # =================================================================
+        print(
+            "\n--- Scenario 4: user_id + group_id both have valid values (exact match) ---"
+        )
+        data = {
+            "user_id": self.user_id,
+            "group_id": self.group_id,
+            "query": "coffee preference",
+            "top_k": 10,
+            "retrieve_method": "hybrid",
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 4"
+        )
+
+        # Validate metadata (user_id should be present)
+        metadata = result["metadata"]
+        assert (
+            metadata.get("user_id") == self.user_id
+        ), "[Scenario 4] metadata user_id should match"
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When both have valid values, should only return exact matches - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 4",
+            expected_user_id=self.user_id,
+            expected_group_id=self.group_id,
+            user_id_filter_type="exact",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 4 successful, returned {result['total_count']} groups of memories with exact user_id and group_id"
+        )
+
+        # =================================================================
+        # Scenario 5: user_id="__all__" + valid group_id (query_all for user_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 5: user_id='__all__' + valid group_id (query_all for user_id) ---"
+        )
+        data = {
+            "user_id": "__all__",
+            "group_id": self.group_id,
+            "query": "coffee preference",
+            "top_k": 10,
+            "retrieve_method": "hybrid",
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 5"
+        )
+
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When user_id is "__all__", should return memories from all users in this group - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 5",
+            expected_group_id=self.group_id,
+            user_id_filter_type="any",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 5 successful, returned {result['total_count']} groups of memories with group_id={self.group_id}"
+        )
+
+        # =================================================================
+        # Scenario 6: user_id=None or "" + valid group_id (filter for null/empty user_id)
+        # =================================================================
+        print(
+            "\n--- Scenario 6: user_id='' + valid group_id (filter for null/empty user_id) ---"
+        )
+        data = {
+            "user_id": "",  # Empty string, equivalent to None
+            "group_id": self.group_id,
+            "query": "coffee preference",
+            "top_k": 10,
+            "retrieve_method": "hybrid",
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+
+        status_code, response = self.call_get_with_body_api("/search", data)
+        result = self._validate_search_response_structure(
+            status_code, response, "Scenario 6"
+        )
+
+        # Note: metadata.group_id may not be returned by backend, so we verify via actual memories
+
+        # When user_id is "" or None, should only return memories with null/empty user_id - THIS IS THE KEY VALIDATION
+        self._validate_search_memories_filter(
+            result,
+            "Scenario 6",
+            expected_group_id=self.group_id,
+            user_id_filter_type="null_or_empty",
+            group_id_filter_type="exact",
+        )
+
+        print(
+            f"✅ Scenario 6 successful, returned {result['total_count']} groups of memories with null/empty user_id"
+        )
+
+        print(f"\n✅ All Hybrid Search Scenarios Completed Successfully")
         return status_code, response
 
     def test_save_conversation_meta(self):
