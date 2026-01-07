@@ -5,7 +5,7 @@ Metrics for monitoring embedding generation performance and reliability.
 
 """
 
-from core.metrics import Counter, Histogram, HistogramBuckets
+from core.observation.metrics import Counter, Histogram, HistogramBuckets
 
 
 # ============================================================

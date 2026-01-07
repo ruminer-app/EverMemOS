@@ -35,7 +35,7 @@ Usage:
     ).observe(0.123)
 """
 
-from core.metrics import Counter, Histogram, HistogramBuckets
+from core.observation.metrics import Counter, Histogram, HistogramBuckets
 
 
 # ============================================================

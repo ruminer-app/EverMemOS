@@ -5,7 +5,7 @@ Runs Prometheus metrics endpoint on a separate port (default: 9090).
 This isolates metrics from business API for security and operational benefits.
 
 Usage:
-    from core.metrics.server import start_metrics_server, stop_metrics_server
+    from core.observation.metrics.server import start_metrics_server
     
     # Start metrics server on port 9090
     start_metrics_server(port=9090)

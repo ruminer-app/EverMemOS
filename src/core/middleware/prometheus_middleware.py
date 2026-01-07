@@ -18,7 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from prometheus_client import Counter, Histogram
-from core.metrics.registry import get_metrics_registry
+from core.observation.metrics.registry import get_metrics_registry
 
 
 # Pre-defined HTTP metrics (following Prometheus naming conventions)

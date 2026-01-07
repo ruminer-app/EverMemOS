@@ -44,7 +44,7 @@ class Histogram:
     - Automatically calculates percentiles, mean, and sum
     
     Usage:
-        from core.metrics import Histogram, HistogramBuckets
+        from core.observation.metrics import Histogram, HistogramBuckets
         
         request_duration = Histogram(
             name='http_request_duration_seconds',

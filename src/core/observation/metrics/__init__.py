@@ -4,7 +4,7 @@ Metrics Library
 Business code imports metric classes from here, no need to depend on prometheus_client directly.
 
 Usage:
-    from core.metrics import Counter, Histogram, BaseGauge
+    from core.observation.metrics import Counter, Histogram, BaseGauge
     
     # Counter - monotonically increasing counter
     requests_total = Counter('http_requests_total', 'Total requests', ['method'])

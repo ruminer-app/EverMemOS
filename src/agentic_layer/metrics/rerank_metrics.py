@@ -29,7 +29,7 @@ Usage:
     ).observe(50)
 """
 
-from core.metrics import Counter, Histogram, HistogramBuckets
+from core.observation.metrics import Counter, Histogram, HistogramBuckets
 
 
 # ============================================================

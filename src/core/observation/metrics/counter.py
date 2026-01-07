@@ -18,7 +18,7 @@ class Counter:
     - Business code does not need to import prometheus_client directly
     
     Usage:
-        from core.metrics import Counter
+        from core.observation.metrics import Counter
         
         requests_total = Counter(
             name='http_requests_total',
