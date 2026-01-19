@@ -60,13 +60,13 @@ All conversation data files follow the standardized [GroupChatFormat](../data_fo
 
 EverMemOS supports two core conversation scenarios:
 
-- **🤖 Company Scenario** (`scene: "company"`)
+- **🤖 Assistant Scenario** (`scene: "assistant"`)
   - Human-AI assistant dialogue
   - One-on-one conversation format
   - `scene_desc` contains `description` field to describe the conversation scene
   - Example: `assistant_chat_en.json`, `assistant_chat_zh.json`
 
-- **👥 Work Scenario** (`scene: "work"`)
+- **👥 Group Chat Scenario** (`scene: "group_chat"`)
   - Multi-person group chat
   - Work collaboration format
   - `scene_desc` is typically an empty object
